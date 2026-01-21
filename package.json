@@ -1,0 +1,12 @@
+{
+  "name": "sbtltv-tmdb-cache",
+  "version": "1.0.0",
+  "description": "Daily TMDB cache for sbtlTV - provides trending/popular lists without requiring API key",
+  "private": true,
+  "scripts": {
+    "fetch": "node scripts/fetch-tmdb-lists.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
