@@ -9,18 +9,23 @@
 const fs = require('fs');
 const path = require('path');
 
-const TMDB_API_KEY = process.env.TMDB_API_KEY;
+const TMDB_ACCESS_TOKEN = process.env.TMDB_ACCESS_TOKEN;
 const BASE_URL = 'https://api.themoviedb.org/3';
 const OUTPUT_FILE = path.join(__dirname, '..', 'data', 'tmdb-cache.json');
 
-if (!TMDB_API_KEY) {
-  console.error('Error: TMDB_API_KEY environment variable is required');
+if (!TMDB_ACCESS_TOKEN) {
+  console.error('Error: TMDB_ACCESS_TOKEN environment variable is required');
   process.exit(1);
 }
 
 async function fetchTmdb(endpoint) {
-  const url = `${BASE_URL}${endpoint}${endpoint.includes('?') ? '&' : '?'}api_key=${TMDB_API_KEY}`;
-  const response = await fetch(url);
+  const url = `${BASE_URL}${endpoint}`;
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${TMDB_ACCESS_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+  });
 
   if (!response.ok) {
     throw new Error(`TMDB API error: ${response.status} for ${endpoint}`);

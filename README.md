@@ -35,7 +35,7 @@ https://raw.githubusercontent.com/thesubtleties/sbtlTV-tmdb-cache/main/data/tmdb
 
 ## Setup (for maintainers)
 
-1. Add `TMDB_API_KEY` as a repository secret
+1. Add `TMDB_ACCESS_TOKEN` as a repository secret (this is the "API Read Access Token" from TMDB, not the API key)
 2. The GitHub Action will run daily at 6 AM UTC
 3. You can also trigger it manually from the Actions tab
 
