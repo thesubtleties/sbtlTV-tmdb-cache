@@ -3,6 +3,7 @@
  *
  * Downloads the TMDB daily movie/TV exports and enriches them with release year.
  * Uses incremental updates - only fetches details for IDs not already in our enriched data.
+ * Saves checkpoints every 50k entries to avoid losing progress on timeout.
  *
  * Output format (compact):
  * Movies: { i: id, t: title, y: year, p: popularity }
@@ -20,6 +21,7 @@ const DATA_DIR = path.join(__dirname, '..', 'data');
 // Rate limiting: TMDB allows 50 req/sec, we'll be conservative
 const REQUESTS_PER_SECOND = 40;
 const BATCH_SIZE = 100;
+const CHECKPOINT_INTERVAL = 50000; // Save every 50k entries
 
 if (!TMDB_ACCESS_TOKEN) {
   console.error('Error: TMDB_ACCESS_TOKEN environment variable is required');
@@ -124,7 +126,7 @@ function loadEnrichedData(type) {
   return map;
 }
 
-function saveEnrichedData(type, enrichedMap) {
+function saveEnrichedData(type, enrichedMap, isCheckpoint = false) {
   const filePath = path.join(DATA_DIR, `tmdb-${type}s-enriched.json`);
 
   // Convert map to sorted array (by popularity desc for better compression)
@@ -138,25 +140,29 @@ function saveEnrichedData(type, enrichedMap) {
   };
 
   fs.writeFileSync(filePath, JSON.stringify(data));
-  console.log(`  Saved ${entries.length} enriched ${type} entries to ${filePath}`);
 
-  // Also create a gzipped version for smaller downloads
-  const gzipped = zlib.gzipSync(JSON.stringify(data));
-  fs.writeFileSync(filePath + '.gz', gzipped);
-  console.log(`  Gzipped size: ${(gzipped.length / 1024 / 1024).toFixed(2)} MB`);
+  if (isCheckpoint) {
+    console.log(`    [Checkpoint] Saved ${entries.length} ${type} entries`);
+  } else {
+    console.log(`  Saved ${entries.length} enriched ${type} entries to ${filePath}`);
+    // Only create gzipped version on final save
+    const gzipped = zlib.gzipSync(JSON.stringify(data));
+    fs.writeFileSync(filePath + '.gz', gzipped);
+    console.log(`  Gzipped size: ${(gzipped.length / 1024 / 1024).toFixed(2)} MB`);
+  }
 }
 
 // ===========================================================================
-// Fetch Details for New IDs
+// Fetch Details for New IDs (with checkpointing)
 // ===========================================================================
 
-async function fetchDetailsForIds(type, ids) {
+async function fetchDetailsForIds(type, ids, enrichedMap) {
   console.log(`  Fetching details for ${ids.length} new ${type} IDs...`);
 
-  const results = [];
   const endpoint = type === 'movie' ? 'movie' : 'tv';
   let completed = 0;
   let errors = 0;
+  let lastCheckpoint = 0;
 
   // Process in batches with rate limiting
   for (let i = 0; i < ids.length; i += BATCH_SIZE) {
@@ -185,7 +191,13 @@ async function fetchDetailsForIds(type, ids) {
     });
 
     const batchResults = await Promise.all(promises);
-    results.push(...batchResults.filter(r => r !== null));
+
+    // Add results directly to enrichedMap
+    for (const result of batchResults) {
+      if (result) {
+        enrichedMap.set(result.i, result);
+      }
+    }
 
     completed += batch.length;
 
@@ -201,10 +213,15 @@ async function fetchDetailsForIds(type, ids) {
       const pct = ((completed / ids.length) * 100).toFixed(1);
       console.log(`    Progress: ${completed}/${ids.length} (${pct}%) - ${errors} errors`);
     }
+
+    // Checkpoint every CHECKPOINT_INTERVAL entries
+    if (completed - lastCheckpoint >= CHECKPOINT_INTERVAL) {
+      saveEnrichedData(type, enrichedMap, true);
+      lastCheckpoint = completed;
+    }
   }
 
-  console.log(`  Fetched ${results.length} details (${errors} errors)`);
-  return results;
+  console.log(`  Fetched details for ${completed} IDs (${errors} errors)`);
 }
 
 // ===========================================================================
@@ -242,12 +259,9 @@ async function enrichType(type) {
     console.log(`  Removed ${staleCount} stale IDs`);
   }
 
-  // 5. Fetch details for new IDs
+  // 5. Fetch details for new IDs (with checkpointing)
   if (newIds.length > 0) {
-    const newDetails = await fetchDetailsForIds(type, newIds);
-    for (const detail of newDetails) {
-      enrichedMap.set(detail.i, detail);
-    }
+    await fetchDetailsForIds(type, newIds, enrichedMap);
   }
 
   // 6. Update popularity for existing entries from export
@@ -258,8 +272,8 @@ async function enrichType(type) {
     }
   }
 
-  // 7. Save enriched data
-  saveEnrichedData(type, enrichedMap);
+  // 7. Final save
+  saveEnrichedData(type, enrichedMap, false);
 
   return {
     total: enrichedMap.size,

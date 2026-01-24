@@ -13,7 +13,7 @@ permissions:
 jobs:
   enrich-exports:
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # 6 hours for initial enrichment
+    timeout-minutes: 360  # 6 hours max
 
     steps:
       - name: Checkout repository
@@ -28,11 +28,14 @@ jobs:
         run: npm install
 
       - name: Enrich TMDB exports
+        id: enrich
+        continue-on-error: true  # Don't fail job, we want to commit checkpoints
         env:
           TMDB_ACCESS_TOKEN: ${{ secrets.TMDB_ACCESS_TOKEN }}
         run: node scripts/enrich-tmdb-exports.js
 
-      - name: Commit and push if changed
+      - name: Commit and push (even on timeout)
+        if: always()  # Run even if previous step failed/timed out
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -42,4 +45,13 @@ jobs:
           else
             git commit -m "chore: Enrich TMDB exports $(date -u +%Y-%m-%d)"
             git push
+          fi
+
+      - name: Report status
+        if: always()
+        run: |
+          if [ "${{ steps.enrich.outcome }}" == "success" ]; then
+            echo "✅ Enrichment completed successfully"
+          else
+            echo "⚠️ Enrichment incomplete (checkpoints saved). Re-run to continue."
           fi
