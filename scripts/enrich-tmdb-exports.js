@@ -22,6 +22,8 @@ const DATA_DIR = path.join(__dirname, '..', 'data');
 const REQUESTS_PER_SECOND = 40;
 const BATCH_SIZE = 100;
 const CHECKPOINT_INTERVAL = 50000; // Save every 50k entries
+const MAX_RUNTIME_MS = 5.5 * 60 * 60 * 1000; // 5.5 hours (leave 30min for commit)
+const START_TIME = Date.now();
 
 if (!TMDB_ACCESS_TOKEN) {
   console.error('Error: TMDB_ACCESS_TOKEN environment variable is required');
@@ -218,6 +220,15 @@ async function fetchDetailsForIds(type, ids, enrichedMap) {
     if (completed - lastCheckpoint >= CHECKPOINT_INTERVAL) {
       saveEnrichedData(type, enrichedMap, true);
       lastCheckpoint = completed;
+    }
+
+    // Check if we're running out of time (exit gracefully before GitHub kills us)
+    if (Date.now() - START_TIME > MAX_RUNTIME_MS) {
+      console.log(`\n⏰ Approaching time limit - saving progress and exiting gracefully`);
+      saveEnrichedData(type, enrichedMap, true);
+      console.log(`  Completed ${completed}/${ids.length} (${((completed/ids.length)*100).toFixed(1)}%)`);
+      console.log(`  Re-run workflow to continue from checkpoint`);
+      process.exit(0); // Clean exit so commit step runs
     }
   }
 
