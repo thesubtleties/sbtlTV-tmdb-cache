@@ -1,0 +1,45 @@
+name: Enrich TMDB Exports
+
+on:
+  schedule:
+    # Run daily at 7 AM UTC (after the regular cache update)
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    # Allow manual triggering
+
+permissions:
+  contents: write
+
+jobs:
+  enrich-exports:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 hours for initial enrichment
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Enrich TMDB exports
+        env:
+          TMDB_ACCESS_TOKEN: ${{ secrets.TMDB_ACCESS_TOKEN }}
+        run: node scripts/enrich-tmdb-exports.js
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: Enrich TMDB exports $(date -u +%Y-%m-%d)"
+            git push
+          fi
