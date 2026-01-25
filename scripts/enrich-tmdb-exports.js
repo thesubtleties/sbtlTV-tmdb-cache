@@ -114,14 +114,17 @@ async function downloadExport(type) {
 // ===========================================================================
 
 function loadEnrichedData(type) {
-  const filePath = path.join(DATA_DIR, `tmdb-${type}s-enriched.json`);
+  const filePath = path.join(DATA_DIR, `tmdb-${type}s-enriched.ndjson`);
   if (!fs.existsSync(filePath)) {
     return new Map();
   }
 
-  const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  // NDJSON format: one JSON entry per line
+  const content = fs.readFileSync(filePath, 'utf-8');
   const map = new Map();
-  for (const entry of data.entries) {
+  for (const line of content.split('\n')) {
+    if (!line.trim()) continue;
+    const entry = JSON.parse(line);
     map.set(entry.i, entry);
   }
   console.log(`  Loaded ${map.size} existing enriched ${type} entries`);
@@ -129,26 +132,22 @@ function loadEnrichedData(type) {
 }
 
 function saveEnrichedData(type, enrichedMap, isCheckpoint = false) {
-  const filePath = path.join(DATA_DIR, `tmdb-${type}s-enriched.json`);
+  const filePath = path.join(DATA_DIR, `tmdb-${type}s-enriched.ndjson`);
 
   // Convert map to sorted array (by popularity desc for better compression)
   const entries = Array.from(enrichedMap.values())
     .sort((a, b) => b.p - a.p);
 
-  const data = {
-    generated_at: new Date().toISOString(),
-    count: entries.length,
-    entries,
-  };
-
-  fs.writeFileSync(filePath, JSON.stringify(data));
+  // NDJSON format: one JSON entry per line (enables streaming on client)
+  const ndjson = entries.map(e => JSON.stringify(e)).join('\n');
+  fs.writeFileSync(filePath, ndjson);
 
   if (isCheckpoint) {
     console.log(`    [Checkpoint] Saved ${entries.length} ${type} entries`);
   } else {
     console.log(`  Saved ${entries.length} enriched ${type} entries to ${filePath}`);
     // Only create gzipped version on final save
-    const gzipped = zlib.gzipSync(JSON.stringify(data));
+    const gzipped = zlib.gzipSync(ndjson);
     fs.writeFileSync(filePath + '.gz', gzipped);
     console.log(`  Gzipped size: ${(gzipped.length / 1024 / 1024).toFixed(2)} MB`);
   }
