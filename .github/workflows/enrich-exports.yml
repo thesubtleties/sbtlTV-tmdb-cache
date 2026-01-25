@@ -44,6 +44,8 @@ jobs:
             echo "No changes to commit"
           else
             git commit -m "chore: Enrich TMDB exports $(date -u +%Y-%m-%d)"
+            # Pull any changes from other runs before pushing
+            git pull --rebase origin main || true
             git push
           fi
 
